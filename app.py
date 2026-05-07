@@ -7,12 +7,8 @@ import os
 
 app = Flask(__name__)
 
-# 🔥 CORS correcto para frontend (Netlify)
-CORS(app, resources={r"/*": {
-    "origins": "*",
-    "allow_headers": ["Content-Type"],
-    "methods": ["GET", "POST", "OPTIONS"]
-}})
+# 🔥 CORS TOTAL (modo seguro para debugging)
+CORS(app, supports_credentials=False)
 
 regex_dni = re.compile(r"\*{4}\d{3,4}\*")
 VALORES_ADMITIDO = {"04"}
@@ -20,20 +16,19 @@ VALORES_ADMITIDO = {"04"}
 @app.route("/analizar", methods=["POST", "OPTIONS"])
 def analizar():
 
-    try:
-        # 🔥 preflight CORS
-        if request.method == "OPTIONS":
-            return "", 200
+    # 🔥 responder preflight SIEMPRE
+    if request.method == "OPTIONS":
+        return "", 204
 
+    try:
         if "pdf" not in request.files:
-            return jsonify({"error": "No se envió PDF"}), 400
+            return jsonify({"error": "No PDF"}), 400
 
         pdf_file = request.files["pdf"]
 
-        # 🔥 archivo temporal
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp:
             pdf_file.save(temp.name)
-            pdf_path = temp.name
+            path = temp.name
 
         resultados = {
             "Especialidad": {
@@ -42,10 +37,9 @@ def analizar():
             }
         }
 
-        # 🔥 leer PDF
-        with pdfplumber.open(pdf_path) as pdf:
-            for pagina in pdf.pages:
-                words = pagina.extract_words()
+        with pdfplumber.open(path) as pdf:
+            for page in pdf.pages:
+                words = page.extract_words()
                 filas = {}
 
                 for w in words:
@@ -53,31 +47,28 @@ def analizar():
                     filas.setdefault(y, []).append(w)
 
                 for fila in filas.values():
-                    texto_fila = [w["text"] for w in fila]
+                    texto = [w["text"] for w in fila]
 
-                    dnis = [t for t in texto_fila if regex_dni.match(t)]
+                    dnis = [t for t in texto if regex_dni.match(t)]
                     if not dnis:
                         continue
 
                     resultados["Especialidad"]["total"] += len(dnis)
 
-                    tipos = [t for t in texto_fila if t in VALORES_ADMITIDO]
+                    tipos = [t for t in texto if t in VALORES_ADMITIDO]
                     resultados["Especialidad"]["admitidos"] += len(tipos)
 
-        os.remove(pdf_path)
+        os.remove(path)
 
-        return jsonify(resultados)
+        # 🔥 respuesta OK
+        return jsonify(resultados), 200
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# 🔥 favicon (quita error 404 opcional)
-@app.route("/favicon.ico")
-def favicon():
-    return "", 204
+        # 🔥 MUY IMPORTANTE: CORS también en errores
+        response = jsonify({"error": str(e)})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        return response, 500
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run()

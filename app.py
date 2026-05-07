@@ -1,8 +1,28 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import pdfplumber
+import re
+import tempfile
+import os
+
+app = Flask(__name__)
+
+# 🔥 CORS bien configurado
+CORS(app, resources={r"/*": {
+    "origins": "*",
+    "allow_headers": ["Content-Type"],
+    "methods": ["GET", "POST", "OPTIONS"]
+}})
+
+regex_dni = re.compile(r"\*{4}\d{3,4}\*")
+VALORES_ADMITIDO = {"04"}
+
 @app.route("/analizar", methods=["POST", "OPTIONS"])
 def analizar():
 
     try:
 
+        # 🔥 Preflight
         if request.method == "OPTIONS":
             return "", 200
 
@@ -11,6 +31,7 @@ def analizar():
 
         pdf_file = request.files["pdf"]
 
+        # 🔥 archivo temporal seguro
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp:
             pdf_file.save(temp.name)
             pdf_path = temp.name
@@ -22,6 +43,7 @@ def analizar():
             }
         }
 
+        # 🔥 lectura PDF
         with pdfplumber.open(pdf_path) as pdf:
             for pagina in pdf.pages:
                 words = pagina.extract_words()
@@ -48,7 +70,10 @@ def analizar():
         return jsonify(resultados)
 
     except Exception as e:
-        # 🔥 ESTO TE VA A DECIR EL PROBLEMA REAL
-        return jsonify({
-            "error": str(e)
-        }), 500
+        # 🔥 ahora verás el error real en frontend
+        return jsonify({"error": str(e)}), 500
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)

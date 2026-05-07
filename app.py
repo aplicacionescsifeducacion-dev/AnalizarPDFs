@@ -1,46 +1,27 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import pdfplumber
-import re
-import tempfile
-import os
-
-app = Flask(__name__)
-
-# 🔥 IMPORTANTE: especificar CORS bien (no solo "*")
-CORS(app, resources={r"/*": {
-    "origins": "*",
-    "allow_headers": ["Content-Type", "API-KEY"],
-    "methods": ["GET", "POST", "OPTIONS"]
-}})
-
-regex_dni = re.compile(r"\*{4}\d{3,4}\*")
-VALORES_ADMITIDO = {"04"}
-
 @app.route("/analizar", methods=["POST", "OPTIONS"])
 def analizar():
 
-    # 🔥 responder preflight manualmente
-    if request.method == "OPTIONS":
-        return jsonify({}), 200
-
-    if "pdf" not in request.files:
-        return jsonify({"error": "No se envió PDF"}), 400
-
-    pdf_file = request.files["pdf"]
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp:
-        pdf_file.save(temp.name)
-        pdf_path = temp.name
-
-    resultados = {
-        "Especialidad": {
-            "total": 0,
-            "admitidos": 0
-        }
-    }
-
     try:
+
+        if request.method == "OPTIONS":
+            return "", 200
+
+        if "pdf" not in request.files:
+            return jsonify({"error": "No se envió PDF"}), 400
+
+        pdf_file = request.files["pdf"]
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp:
+            pdf_file.save(temp.name)
+            pdf_path = temp.name
+
+        resultados = {
+            "Especialidad": {
+                "total": 0,
+                "admitidos": 0
+            }
+        }
+
         with pdfplumber.open(pdf_path) as pdf:
             for pagina in pdf.pages:
                 words = pagina.extract_words()
@@ -62,11 +43,12 @@ def analizar():
                     tipos = [t for t in texto_fila if t in VALORES_ADMITIDO]
                     resultados["Especialidad"]["admitidos"] += len(tipos)
 
-        return jsonify(resultados)
-
-    finally:
         os.remove(pdf_path)
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+        return jsonify(resultados)
+
+    except Exception as e:
+        # 🔥 ESTO TE VA A DECIR EL PROBLEMA REAL
+        return jsonify({
+            "error": str(e)
+        }), 500

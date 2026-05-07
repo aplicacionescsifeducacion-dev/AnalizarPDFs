@@ -17,7 +17,7 @@ CORS(app, resources={r"/*": {
 regex_dni = re.compile(r"\*{4}\d{3,4}\*")
 VALORES_ADMITIDO = {"04"}
 
-@app.route("/", methods=["POST", "OPTIONS"])
+@app.route("/analizar", methods=["POST", "OPTIONS"])
 def analizar():
 
     # 🔥 responder preflight manualmente

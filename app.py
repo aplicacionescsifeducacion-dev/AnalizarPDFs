@@ -1,44 +1,67 @@
+from flask import Flask, request, jsonify
 import pdfplumber
 import re
-from collections import defaultdict
-import sys
-import json
+import tempfile
+import os
 
-PDF_PATH = sys.argv[1]
-
-resultados = {"total": 0, "admitidos": 0}
+app = Flask(__name__)
 
 regex_dni = re.compile(r"\*{4}\d{3,4}\*")
 VALORES_ADMITIDO = {"04"}
 
-with pdfplumber.open(PDF_PATH) as pdf:
-    for pagina in pdf.pages:
+@app.route("/", methods=["POST"])
+def analizar():
 
-        words = pagina.extract_words()
+    if "pdf" not in request.files:
+        return jsonify({"error": "No se envió PDF"})
 
-        # 🔹 Agrupar por líneas (y)
-        filas = {}
+    pdf_file = request.files["pdf"]
 
-        for w in words:
-            y = round(w["top"], 0)
-            filas.setdefault(y, []).append(w)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp:
+        pdf_file.save(temp.name)
+        pdf_path = temp.name
 
-        # 🔹 Procesar cada fila
-        for fila in filas.values():
+    resultados = {
+        "Especialidad": {
+            "total": 0,
+            "admitidos": 0
+        }
+    }
 
-            texto_fila = [w["text"] for w in fila]
+    try:
 
-            # Buscar DNI en la fila
-            dnis = [t for t in texto_fila if regex_dni.match(t)]
+        with pdfplumber.open(pdf_path) as pdf:
 
-            if not dnis:
-                continue
+            for pagina in pdf.pages:
 
-            resultados["total"] += len(dnis)
+                words = pagina.extract_words()
 
-            # Buscar tipo en la misma fila
-            tipos = [t for t in texto_fila if t in VALORES_ADMITIDO]
+                filas = {}
 
-            resultados["admitidos"] += len(tipos)
+                for w in words:
+                    y = round(w["top"], 0)
+                    filas.setdefault(y, []).append(w)
 
-print(json.dumps(resultados, indent=2))
+                for fila in filas.values():
+
+                    texto_fila = [w["text"] for w in fila]
+
+                    dnis = [t for t in texto_fila if regex_dni.match(t)]
+
+                    if not dnis:
+                        continue
+
+                    resultados["Especialidad"]["total"] += len(dnis)
+
+                    tipos = [t for t in texto_fila if t in VALORES_ADMITIDO]
+
+                    resultados["Especialidad"]["admitidos"] += len(tipos)
+
+        return jsonify(resultados)
+
+    finally:
+        os.remove(pdf_path)
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)

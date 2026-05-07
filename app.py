@@ -1,88 +1,86 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
-import pdfplumber
+import fitz
 import re
-import tempfile
-import os
+from collections import defaultdict
+from flask_cors import CORS
 
 app = Flask(__name__)
 
-# 🔥 CORS correcto (obligatorio para Netlify)
+# 🔥 CORS CORRECTO (incluye API-KEY)
 CORS(app, resources={r"/*": {
     "origins": "*",
-    "allow_headers": ["Content-Type"],
+    "allow_headers": ["Content-Type", "API-KEY"],
     "methods": ["GET", "POST", "OPTIONS"]
 }})
 
-regex_dni = re.compile(r"\*{4}\d{3,4}\*")
-VALORES_ADMITIDO = {"04"}
+REGEX_ESPECIALIDAD = re.compile(r"ESPECIALIDAD\s*:\s*(.+)", re.IGNORECASE)
+REGEX_SI = re.compile(r"\b(SI|S|SÍ)\b", re.IGNORECASE)
 
-# 🔥 endpoint correcto
+@app.route("/")
+def index():
+    return jsonify({"status": "API funcionando"})
+
 @app.route("/analizar", methods=["POST", "OPTIONS"])
 def analizar():
 
-    # 🔵 Preflight CORS (IMPORTANTE)
+    # 🔥 Preflight CORS obligatorio
     if request.method == "OPTIONS":
         return "", 204
 
-    # 🔴 bloquear GET (evita 405 confuso)
-    if request.method != "POST":
-        return jsonify({"error": "Método no permitido"}), 405
-
     try:
+        # 🔐 API KEY CHECK
+        if request.headers.get("API-KEY") != "12345":
+            return jsonify({"error": "No autorizado"}), 403
+
+        # 📄 validar archivo
         if "pdf" not in request.files:
-            return jsonify({"error": "No se envió PDF"}), 400
+            return jsonify({"error": "No PDF recibido"}), 400
 
-        pdf_file = request.files["pdf"]
+        archivo = request.files["pdf"]
+        pdf_bytes = archivo.read()
 
-        # 🔥 archivo temporal seguro
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp:
-            pdf_file.save(temp.name)
-            path = temp.name
+        resultados = defaultdict(lambda: {"total": 0, "admitidos": 0})
+        especialidad_actual = None
 
-        resultados = {
-            "Especialidad": {
-                "total": 0,
-                "admitidos": 0
-            }
-        }
+        # 📊 leer PDF
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf:
+            for pagina in pdf:
+                texto = pagina.get_text()
 
-        # 🔥 lectura PDF
-        with pdfplumber.open(path) as pdf:
-            for page in pdf.pages:
-                words = page.extract_words()
-                filas = {}
+                if not texto:
+                    continue
 
-                for w in words:
-                    y = round(w["top"], 0)
-                    filas.setdefault(y, []).append(w)
+                for linea in texto.split("\n"):
+                    linea = linea.strip()
 
-                for fila in filas.values():
-                    texto = [w["text"] for w in fila]
-
-                    dnis = [t for t in texto if regex_dni.match(t)]
-                    if not dnis:
+                    # detectar especialidad
+                    match = REGEX_ESPECIALIDAD.search(linea)
+                    if match:
+                        especialidad_actual = match.group(1).strip()
                         continue
 
-                    resultados["Especialidad"]["total"] += len(dnis)
-
-                    tipos = [t for t in texto if t in VALORES_ADMITIDO]
-                    resultados["Especialidad"]["admitidos"] += len(tipos)
-
-        os.remove(path)
+                    # detectar SI
+                    if REGEX_SI.search(linea):
+                        if especialidad_actual:
+                            resultados[especialidad_actual]["total"] += 1
+                            resultados[especialidad_actual]["admitidos"] += 1
 
         return jsonify(resultados)
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e),
+            "type": type(e).__name__
+        }), 500
 
 
-# 🔥 evita error favicon (404)
+# 🔥 evitar error favicon (opcional)
 @app.route("/favicon.ico")
 def favicon():
     return "", 204
 
 
 if __name__ == "__main__":
+    import os
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)

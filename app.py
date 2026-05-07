@@ -7,25 +7,35 @@ import os
 
 app = Flask(__name__)
 
-# 🔥 CORS TOTAL (modo seguro para debugging)
-CORS(app, supports_credentials=False)
+# 🔥 CORS correcto (obligatorio para Netlify)
+CORS(app, resources={r"/*": {
+    "origins": "*",
+    "allow_headers": ["Content-Type"],
+    "methods": ["GET", "POST", "OPTIONS"]
+}})
 
 regex_dni = re.compile(r"\*{4}\d{3,4}\*")
 VALORES_ADMITIDO = {"04"}
 
+# 🔥 endpoint correcto
 @app.route("/analizar", methods=["POST", "OPTIONS"])
 def analizar():
 
-    # 🔥 responder preflight SIEMPRE
+    # 🔵 Preflight CORS (IMPORTANTE)
     if request.method == "OPTIONS":
         return "", 204
 
+    # 🔴 bloquear GET (evita 405 confuso)
+    if request.method != "POST":
+        return jsonify({"error": "Método no permitido"}), 405
+
     try:
         if "pdf" not in request.files:
-            return jsonify({"error": "No PDF"}), 400
+            return jsonify({"error": "No se envió PDF"}), 400
 
         pdf_file = request.files["pdf"]
 
+        # 🔥 archivo temporal seguro
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp:
             pdf_file.save(temp.name)
             path = temp.name
@@ -37,6 +47,7 @@ def analizar():
             }
         }
 
+        # 🔥 lectura PDF
         with pdfplumber.open(path) as pdf:
             for page in pdf.pages:
                 words = page.extract_words()
@@ -60,15 +71,18 @@ def analizar():
 
         os.remove(path)
 
-        # 🔥 respuesta OK
-        return jsonify(resultados), 200
+        return jsonify(resultados)
 
     except Exception as e:
-        # 🔥 MUY IMPORTANTE: CORS también en errores
-        response = jsonify({"error": str(e)})
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        return response, 500
+        return jsonify({"error": str(e)}), 500
+
+
+# 🔥 evita error favicon (404)
+@app.route("/favicon.ico")
+def favicon():
+    return "", 204
 
 
 if __name__ == "__main__":
-    app.run()
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)

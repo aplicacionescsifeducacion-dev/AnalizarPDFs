@@ -3,3 +3,4 @@ gunicorn
 pdfplumber
 pdfminer.six
 Pillow
+flask-cors

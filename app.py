@@ -5,36 +5,32 @@ import re
 import tempfile
 import os
 
-# 🔥 Crear app PRIMERO (esto evita NameError)
 app = Flask(__name__)
 
-# 🔥 CORS configurado correctamente
+# 🔥 CORS correcto para frontend (Netlify)
 CORS(app, resources={r"/*": {
     "origins": "*",
     "allow_headers": ["Content-Type"],
     "methods": ["GET", "POST", "OPTIONS"]
 }})
 
-# 🔍 patrones
 regex_dni = re.compile(r"\*{4}\d{3,4}\*")
 VALORES_ADMITIDO = {"04"}
 
-# 🔥 endpoint correcto
 @app.route("/analizar", methods=["POST", "OPTIONS"])
 def analizar():
 
     try:
-        # 🔥 preflight request
+        # 🔥 preflight CORS
         if request.method == "OPTIONS":
             return "", 200
 
-        # 🔥 validar archivo
         if "pdf" not in request.files:
             return jsonify({"error": "No se envió PDF"}), 400
 
         pdf_file = request.files["pdf"]
 
-        # 🔥 guardar temporalmente
+        # 🔥 archivo temporal
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp:
             pdf_file.save(temp.name)
             pdf_path = temp.name
@@ -68,17 +64,20 @@ def analizar():
                     tipos = [t for t in texto_fila if t in VALORES_ADMITIDO]
                     resultados["Especialidad"]["admitidos"] += len(tipos)
 
-        # 🔥 limpiar archivo
         os.remove(pdf_path)
 
         return jsonify(resultados)
 
     except Exception as e:
-        # 🔥 ahora verás errores reales en frontend
         return jsonify({"error": str(e)}), 500
 
 
-# 🔥 necesario para Render
+# 🔥 favicon (quita error 404 opcional)
+@app.route("/favicon.ico")
+def favicon():
+    return "", 204
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)

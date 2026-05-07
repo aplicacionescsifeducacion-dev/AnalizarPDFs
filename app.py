@@ -7,8 +7,12 @@ import os
 
 app = Flask(__name__)
 
-# 🔥 habilita CORS para todo
-CORS(app, resources={r"/*": {"origins": "*"}})
+# 🔥 IMPORTANTE: especificar CORS bien (no solo "*")
+CORS(app, resources={r"/*": {
+    "origins": "*",
+    "allow_headers": ["Content-Type", "API-KEY"],
+    "methods": ["GET", "POST", "OPTIONS"]
+}})
 
 regex_dni = re.compile(r"\*{4}\d{3,4}\*")
 VALORES_ADMITIDO = {"04"}
@@ -16,11 +20,12 @@ VALORES_ADMITIDO = {"04"}
 @app.route("/", methods=["POST", "OPTIONS"])
 def analizar():
 
+    # 🔥 responder preflight manualmente
     if request.method == "OPTIONS":
         return jsonify({}), 200
 
     if "pdf" not in request.files:
-        return jsonify({"error": "No se envió PDF"})
+        return jsonify({"error": "No se envió PDF"}), 400
 
     pdf_file = request.files["pdf"]
 
@@ -49,7 +54,6 @@ def analizar():
                     texto_fila = [w["text"] for w in fila]
 
                     dnis = [t for t in texto_fila if regex_dni.match(t)]
-
                     if not dnis:
                         continue
 
@@ -62,3 +66,7 @@ def analizar():
 
     finally:
         os.remove(pdf_path)
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
